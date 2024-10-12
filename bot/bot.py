@@ -1,65 +1,86 @@
 import os
 import threading
 import asyncio
+import hashlib
+import time
+import uuid
+import requests
+import json
 from bot.painter import painters
 from bot.mineclaimer import mine_claimer
 from bot.utils import night_sleep, Colors
 from bot.notpx import NotPx
-import config
 from telethon.sync import TelegramClient
+import telebot
+from datetime import datetime, timedelta
 
-async def run_sessions(session_name):
-    cli = NotPx("sessions/" + session_name)
-    await cli.init_async()
-    # Run painters and mine_claimer concurrently
-    await asyncio.gather(
-        painters(cli, session_name),
-        mine_claimer(cli, session_name)
-    )
-
-async def start_all_sessions():
-    dirs = os.listdir("sessions/")
-    sessions = list(filter(lambda x: x.endswith(".session"), dirs))
-    sessions = list(map(lambda x: x.split(".session")[0], sessions))
-
-    tasks = []
-    for session_name in sessions:
-        try:
-            tasks.append(run_sessions(session_name))
-        except Exception as e:
-            print("[!] {}Error on load session{} \"{}\", error: {}".format(Colors.RED, Colors.END, session_name, e))
-
-    # Wait for all sessions to complete
-    await asyncio.gather(*tasks)
-
-def multithread_starter():
-    # Create a new thread to run the event loop
-    loop_thread = threading.Thread(target=lambda: asyncio.run(start_all_sessions()))
-    loop_thread.start()
-
-def process():
-    if not os.path.exists("sessions"):
-        os.mkdir("sessions")
     print(r"""{}
-    _   _       _  ______       ______       _   
-    | \ | |     | | | ___ \      | ___ \     | |  
-    |  \| | ___ | |_| |_/ /_  __ | |_/ / ___ | |_ 
-    | . ` |/ _ \| __|  __/\ \/ / | ___ \/ _ \| __|
-    | |\  | (_) | |_| |    >  <  | |_/ / (_) | |_ 
-    \_| \_/\___/ \__\_|   /_/\_\ \____/ \___/ \__|
+███████  █████  ██    ██  █████  ███    ██ 
+██      ██   ██ ██    ██ ██   ██ ████   ██ 
+███████ ███████ ██    ██ ███████ ██ ██  ██ 
+     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ 
+███████ ██   ██   ████   ██   ██ ██   ████ 
                                                 
-            NotPx Auto Paint & Claim by AliCloner - v1.0 {}""".format(Colors.BLUE, Colors.END))
+            NotPx Auto Paint & Claim by @sgr - v1.0 {}""".format(Colors.BLUE, Colors.END))
+    
+    print("Starting Telegram bot...")
+    bot_thread = threading.Thread(target=bot.polling, kwargs={"none_stop": True})
+    bot_thread.start()
+    
     while True:
-        option = input("[!] {}Enter 1{} For Adding Account and {}2 for start{} mine + claim: ".format(Colors.BLUE, Colors.END, Colors.BLUE, Colors.END))
-        # option = "2"
+        key = input("Enter your license key to use the script: ")
+        username = input("Enter your username: ")
+        result = check_license(key, username)
+        if result == True:
+            print("License key verified. You can now use the script.")
+            break
+        elif result == "License key is already in use by another user":
+            print("[!] " + result)
+        else:
+            print("[!] Invalid or expired license key. Please contact the admin for a valid key.")
+    
+    while True:
+        print("\nMain Menu:")
+        print("1. Add Account session")
+        print("2. Start Mine + Claim")
+        print("3. Add API ID and Hash")
+        print("4. Reset API Credentials")
+        print("5. Reset Session")
+        print("6. Exit")
+        
+        option = input("Enter your choice: ")
+        
         if option == "1":
             name = input("\nEnter Session name: ")
+            if not os.path.exists("sessions"):
+                os.mkdir("sessions")
             if not any(name in i for i in os.listdir("sessions/")):
-                client = TelegramClient("sessions/" + name, config.API_ID, config.API_HASH).start()
-                client.disconnect()
-                print("[+] Session {} {}saved success{}.".format(name, Colors.GREEN, Colors.END))
+                api_id, api_hash = load_api_credentials()
+                if api_id and api_hash:
+                    client = TelegramClient("sessions/" + name, api_id, api_hash).start()
+                    client.disconnect()
+                    print("[+] Session {} {}saved success{}.".format(name, Colors.GREEN, Colors.END))
+                else:
+                    print("[!] API credentials not found. Please add them first.")
             else:
                 print("[x] Session {} {}already exist{}.".format(name, Colors.RED, Colors.END))
         elif option == "2":
-            multithread_starter()
+            multithread_starter(key, username)
+        elif option == "3":
+            add_api_credentials()
+        elif option == "4":
+            reset_api_credentials()
+        elif option == "5":
+            reset_session()
+        elif option == "6":
+            print("Exiting...")
+            bot.stop_polling()
+            bot_thread.join()
             break
+        else:
+            print("[!] Invalid option. Please try again.")
+
+if __name__ == "__main__":
+    if not os.path.exists("sessions"):
+        os.mkdir("sessions")
+    process()
